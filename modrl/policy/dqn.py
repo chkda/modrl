@@ -1,7 +1,12 @@
-from modrl.core.trainer import  Base
+from modrl.core.trainer import  Base, TrainConfig
+from modrl.utils import linear_scheduler
+
+import  numpy as np
+import gymnasium as gym
 
 import torch
 import torch.nn as nn
+import torch.optim as optim
 import torch.nn.functional as F
 
 
@@ -25,11 +30,19 @@ class QNetwork(nn.Module):
         return  action_values
 
 
-
 class DQN(Base):
-
-    def __init__(self):
-        pass
+    def __init__(self, config: TrainConfig, env: gym.vector.VectorEnv):
+        self.config = config
+        if not isinstance(env.action_space, gym.spaces.Discrete):
+            raise TypeError("Action space is not of type gym.spaces.Discrete")
+        self.actions_dims = np.array(env.single_action_space.shape).prod()
+        self.obs_dims = np.array(env.single_observation_space.shape).prod()
+        self.env = env
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.network = QNetwork(self.actions_dims, self.obs_dims)
+        self.target_network = QNetwork(self.actions_dims, self.obs_dims)
+        self.optimiser = optim.Adam(self.network.parameters(), lr=self.config.lr)
+        self.target_network.load_state_dict(self.network.state_dict())
 
     def train(self):
         pass
