@@ -1,6 +1,8 @@
 from modrl.core.trainer import  Base, TrainConfig
 from modrl.utils import linear_scheduler
 
+import wandb
+import random
 import  numpy as np
 import gymnasium as gym
 
@@ -8,6 +10,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from torch.utils.tensorboard import SummaryWriter
 
 
 class QNetwork(nn.Module):
@@ -45,7 +48,26 @@ class DQN(Base):
         self.target_network.load_state_dict(self.network.state_dict())
 
     def train(self):
-        pass
+        if self.config.use_wandb:
+            wandb.init(
+                project=self.config.wandb_project_name,
+                config=self.config.to_dict(),
+                monitor_gym=self.config.monitor_gym,
+                sync_tensorboard=self.config.sync_tensorboard,
+                name=self.config.exp_name
+            )
+
+        writer = SummaryWriter(f"runs/{self.config.exp_name}")
+
+        random.seed(self.config.seed)
+        np.random.seed(self.config.seed)
+        torch.manual_seed(self.config.seed)
+
+        self.network = self.network.to(self.device)
+        self.target_network = self.target_network.to(self.device)
+
+        obs, _ = self.env.reset(seed=self.config.seed)
+
 
     def eval(self):
         pass

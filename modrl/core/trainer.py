@@ -42,7 +42,11 @@ class TrainConfig:
     tau: int
     num_envs: int
     vectorise: bool
-    use_wandb: bool
-    monitor_gym: bool
-    sync_tensorboard: bool
+    use_wandb: bool = False
+    wandb_project_name: str
+    monitor_gym: bool = False
+    sync_tensorboard: bool = False
+    exp_name: str
 
+    def to_dict(self):
+        return {attr: getattr(self, attr, None) for attr in self.__annotations__}
