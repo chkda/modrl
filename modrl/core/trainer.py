@@ -47,6 +47,7 @@ class TrainConfig:
     monitor_gym: bool = False
     sync_tensorboard: bool = False
     exp_name: str
+    eval_steps: int
 
     def to_dict(self):
         return {attr: getattr(self, attr, None) for attr in self.__annotations__}

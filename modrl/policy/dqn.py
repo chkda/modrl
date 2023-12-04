@@ -127,14 +127,39 @@ class DQN(Base):
                             self.config.tau * q_network_param.data + (1 - self.config.tau) * target_network_param.data
                         )
 
-
-
-
     def eval(self):
-        pass
+        episodic_returns = []
+        epsilon = self.config.epsilon_end
+        obs, _ = self.env.reset(seed=self.config.seed)
+        for step in range(self.config.eval_steps):
+            if random.random() < epsilon:
+                actions = self.env.single_action_space.sample()
+            else:
+                q_values = self.target_network(torch.Tensor(obs).to(self.device))
+                actions = torch.argmax(q_values, dim=1).cpu().numpy()
 
-    def load(self):
-        pass
+            next_obs, _, _, _, infos = self.env.step(actions)
 
-    def save(self):
-        pass
+            if "final_info" in infos:
+                for info in infos["final_info"]:
+                    if "episode" not in info:
+                        continue
+                    print(f"eval_episode={len(episodic_returns)}, episodic_return={info['episode']['r']}")
+                    episodic_returns += [info["episode"]["r"]]
+
+            obs = next_obs
+
+        return episodic_returns
+
+    def load(self, path: str):
+        self.network = QNetwork(self.actions_dims, self.obs_dims)
+        self.target_network = QNetwork(self.actions_dims, self.obs_dims)
+        self.network.load_state_dict(torch.load(path))
+        self.target_network.load_state_dict(torch.load(path))
+        print("Weights loaded")
+        return
+
+    def save(self, path: str):
+        torch.save(self.target_network.parameters(), path)
+        print("Model saved")
+        return
