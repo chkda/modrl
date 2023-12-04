@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
+from  stable_baselines3.common.buffers import ReplayBuffer
 
 
 class QNetwork(nn.Module):
@@ -67,6 +68,66 @@ class DQN(Base):
         self.target_network = self.target_network.to(self.device)
 
         obs, _ = self.env.reset(seed=self.config.seed)
+
+        rb = ReplayBuffer(
+            self.config.buffer_size,
+            self.env.single_observation_space,
+            self.env.single_action_space,
+            self.device,
+            handle_timeout_termination=False,
+        )
+
+        for global_step in range(self.config.num_steps):
+            epsilon = linear_scheduler(self.config.epsilon_start, self.config.epsilon_end, global_step, self.config.num_steps)
+            if random.random() < epsilon:
+                actions = np.array([self.env.single_action_space.sample() for _ in range(self.config.num_envs)])
+            else:
+                q_values = self.network(torch.Tensor(obs).to(self.device))
+                actions = torch.argmax(q_values, dim=1).cpu().numpy()
+
+            next_obs, rewards, terminations, truncations, infos = self.env.step(actions)
+
+            if "final_info" in infos:
+                for info in infos["final_info"]:
+                    if info and "episode" in info:
+                        writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
+                        writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
+
+            real_next_obs = next_obs.copy()
+
+            for idx, trunc in enumerate(truncations):
+                if trunc:
+                    real_next_obs[idx] = infos["final_observation"][idx]
+
+            rb.add(obs, real_next_obs, actions, rewards, terminations, infos)
+
+            if global_step > self.config.learning_starts:
+                if global_step % self.config.train_frequency == 0:
+                    data = rb.sample(self.config.batch_size)
+                    with torch.no_grad():
+                        target_max, _ = self.target_network(data.next_observations).max(dim=1)
+                        td_target = data.rewards.flatten() + self.config.gamma * target_max * (1 - data.dones.flatten())
+
+                    old_val = self.network(data.observations).gather(1, data.actions).squeeze()
+                    loss = F.mse_loss(old_val, td_target)
+
+                    if global_step % 100 == 0:
+                        writer.add_scalar("losses/td_loss", loss, global_step)
+                        writer.add_scalar("losses/td_target", td_target.mean().item(), global_step)
+                        writer.add_scalar("losses/q_values", old_val.mean().item(), global_step)
+
+                    self.optimiser.zero_grad()
+                    loss.backward()
+                    self.optimiser.step()
+
+                if global_step % self.config.target_network_frequency == 0:
+                    for target_network_param, q_network_param in zip(self.target_network.parameters(),
+                                                                     self.network.parameters()):
+                        target_network_param.data.copy_(
+                            self.config.tau * q_network_param.data + (1 - self.config.tau) * target_network_param.data
+                        )
+
+
 
 
     def eval(self):
