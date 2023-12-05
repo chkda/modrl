@@ -17,7 +17,7 @@ def make_env(env_id, seed, idx, capture_video, run_name):
 
     return thunk
 
-config = TrainConfig(num_steps=1000,
+config = TrainConfig(num_steps=10000,
                      lr=0.001,
                      exp_name="test-1",
                      wandb_project_name="test-exp"
@@ -25,7 +25,8 @@ config = TrainConfig(num_steps=1000,
 
 
 
-envs = gym.vector.SyncVectorEnv([make_env("CartPole-v1", 0, 0, True, "test-1")])
+# envs = gym.vector.SyncVectorEnv([make_env("CartPole-v1", 0, 0, True, "test-1")])
+envs = make_env("CartPole-v1", 0, 0, True, "test-1")()
 
 policy = DQN(config=config, env=envs)
 

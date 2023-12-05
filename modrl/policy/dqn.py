@@ -36,10 +36,12 @@ class QNetwork(nn.Module):
 
 
 class DQN(Base):
-    def __init__(self, config: TrainConfig, env: gym.vector.VectorEnv):
+    def __init__(self, config: TrainConfig, env: gym.Env):
         self.config = config
-        self.actions_dims = np.array(env.single_action_space.shape).prod(dtype="uint8")
-        self.obs_dims = np.array(env.single_observation_space.shape).prod(dtype="uint8")
+        self.actions_dims = np.array(env.action_space.shape).prod(dtype="uint8")
+        if self.actions_dims == 1:
+            self.actions_dims += 1
+        self.obs_dims = np.array(env.observation_space.shape).prod(dtype="uint8")
         self.env = env
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.network = QNetwork(self.actions_dims, self.obs_dims)
@@ -71,12 +73,13 @@ class DQN(Base):
         rb = ReplayBuffer(self.config.buffer_size)
 
         for global_step in range(self.config.num_steps):
+            print("Global Step:", global_step)
             epsilon = linear_scheduler(self.config.epsilon_start, self.config.epsilon_end, global_step, self.config.num_steps)
             if random.random() < epsilon:
-                actions = np.array([self.env.single_action_space.sample() for _ in range(self.config.num_envs)])
+                actions = self.env.action_space.sample()
             else:
                 q_values = self.network(torch.Tensor(obs).to(self.device))
-                actions = torch.argmax(q_values, dim=1).cpu().numpy()
+                actions = torch.argmax(q_values).cpu().numpy()
 
             next_obs, rewards, terminations, truncations, infos = self.env.step(actions)
 
@@ -88,9 +91,10 @@ class DQN(Base):
 
             real_next_obs = next_obs.copy()
 
-            for idx, trunc in enumerate(truncations):
-                if trunc:
-                    real_next_obs[idx] = infos["final_observation"][idx]
+            # for idx, trunc in enumerate(truncations):
+            # if truncations:
+            #     print(infos)
+                # real_next_obs = infos["final_observation"]
 
             rb.add(obs, real_next_obs, actions, rewards, terminations)
 
@@ -100,9 +104,13 @@ class DQN(Base):
                     with torch.no_grad():
                         target_max, _ = self.target_network(data.next_observations).max(dim=1)
                         td_target = data.rewards.flatten() + self.config.gamma * target_max * (1 - data.dones.flatten())
+                        td_target = td_target.to(torch.float32)
 
-                    old_val = self.network(data.observations).gather(1, data.actions).squeeze()
-                    loss = F.mse_loss(old_val, td_target)
+                    old_val = self.network(data.observations)
+                    q_val = torch.gather(old_val, 1, data.actions.unsqueeze(1))
+                    q_val = q_val.squeeze(1)
+
+                    loss = F.mse_loss(q_val, td_target)
 
                     if global_step % 100 == 0:
                         writer.add_scalar("losses/td_loss", loss, global_step)
@@ -126,7 +134,7 @@ class DQN(Base):
         obs, _ = self.env.reset(seed=self.config.seed)
         for step in range(self.config.eval_steps):
             if random.random() < epsilon:
-                actions = self.env.single_action_space.sample()
+                actions = self.env.action_space.sample()
             else:
                 q_values = self.target_network(torch.Tensor(obs).to(self.device))
                 actions = torch.argmax(q_values, dim=1).cpu().numpy()

@@ -1,3 +1,4 @@
+import torch
 import random
 import numpy as np
 from collections import  deque, namedtuple
@@ -16,4 +17,20 @@ class ReplayBuffer:
 
     def sample(self, batch_size=32):
         batch_idxs = random.sample(range(len(self.storage)), batch_size)
-        return [self.storage[idx] for idx in batch_idxs]
+        states, next_states, actions, rewards, dones = [], [], [], [], []
+        for idx in batch_idxs:
+            data = self.storage[idx]
+            print(data.observations)
+            states.append(data.observations)
+            next_states.append(data.next_observations)
+            actions.append(data.actions)
+            rewards.append(data.rewards)
+            dones.append(data.dones)
+
+        states = torch.from_numpy(np.array(states))
+        next_states = torch.from_numpy(np.array(next_states))
+        rewards = torch.from_numpy(np.array(rewards))
+        actions = torch.from_numpy(np.array(actions))
+        dones = np.array(dones)
+
+        return Transition(states, next_states, actions, rewards, dones)
