@@ -1,5 +1,6 @@
 from modrl.core.trainer import  Base, TrainConfig
-from modrl.utils import linear_scheduler
+from modrl.utils.scheduler import linear_scheduler
+from modrl.utils.buffers import ReplayBuffer
 
 import wandb
 import random
@@ -11,7 +12,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
-from  stable_baselines3.common.buffers import ReplayBuffer
+# from  stable_baselines3.common.buffers import ReplayBuffer
 
 
 class QNetwork(nn.Module):
@@ -37,10 +38,8 @@ class QNetwork(nn.Module):
 class DQN(Base):
     def __init__(self, config: TrainConfig, env: gym.vector.VectorEnv):
         self.config = config
-        if not isinstance(env.action_space, gym.spaces.Discrete):
-            raise TypeError("Action space is not of type gym.spaces.Discrete")
-        self.actions_dims = np.array(env.single_action_space.shape).prod()
-        self.obs_dims = np.array(env.single_observation_space.shape).prod()
+        self.actions_dims = np.array(env.single_action_space.shape).prod(dtype="uint8")
+        self.obs_dims = np.array(env.single_observation_space.shape).prod(dtype="uint8")
         self.env = env
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.network = QNetwork(self.actions_dims, self.obs_dims)
@@ -69,13 +68,7 @@ class DQN(Base):
 
         obs, _ = self.env.reset(seed=self.config.seed)
 
-        rb = ReplayBuffer(
-            self.config.buffer_size,
-            self.env.single_observation_space,
-            self.env.single_action_space,
-            self.device,
-            handle_timeout_termination=False,
-        )
+        rb = ReplayBuffer(self.config.buffer_size)
 
         for global_step in range(self.config.num_steps):
             epsilon = linear_scheduler(self.config.epsilon_start, self.config.epsilon_end, global_step, self.config.num_steps)
@@ -99,7 +92,7 @@ class DQN(Base):
                 if trunc:
                     real_next_obs[idx] = infos["final_observation"][idx]
 
-            rb.add(obs, real_next_obs, actions, rewards, terminations, infos)
+            rb.add(obs, real_next_obs, actions, rewards, terminations)
 
             if global_step > self.config.learning_starts:
                 if global_step % self.config.train_frequency == 0:
